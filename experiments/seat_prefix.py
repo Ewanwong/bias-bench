@@ -8,6 +8,8 @@ from bias_bench.benchmark.seat import SEATRunner
 from bias_bench.model import models
 from bias_bench.util import generate_experiment_id
 
+from PrefixGPT2 import PrefixGPT2
+
 thisdir = os.path.dirname(os.path.realpath(__file__))
 parser = argparse.ArgumentParser(description="Runs SEAT benchmark.")
 parser.add_argument(
@@ -39,6 +41,10 @@ parser.add_argument(
     help="Use parametric test (normal assumption) to compute p-values.",
 )
 parser.add_argument(
+    "--save_path",
+    type=str
+)
+parser.add_argument(
     "--model_name_or_path",
     action="store",
     type=str,
@@ -51,8 +57,8 @@ parser.add_argument(
     "--model",
     action="store",
     type=str,
-    default="GPT2Model",
-    choices=["BertModel", "AlbertModel", "RobertaModel", "GPT2Model"],
+    default="GPT2LMHeadModel",
+    choices=["BertModel", "AlbertModel", "RobertaModel", f"GPT2LMHeadModel, GPT2Model"],
     help="Model to evalute (e.g., BertModel). Typically, these correspond to a HuggingFace "
     "class.",
 )
@@ -74,7 +80,7 @@ if __name__ == "__main__":
     print(f" - model_name_or_path: {args.model_name_or_path}")
 
     # Load model and tokenizer.
-    model = getattr(models, args.model)(args.model_name_or_path)
+    model = PrefixGPT2.from_pretrained(args.save_path)
     model.eval()
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)
 
@@ -90,6 +96,6 @@ if __name__ == "__main__":
     results = runner()
     print(results)
 
-    os.makedirs(f"{args.persistent_dir}/results/seat", exist_ok=True)
-    with open(f"{args.persistent_dir}/results/seat/{experiment_id}.json", "w") as f:
+    os.makedirs(f"{args.save_path}/results/seat", exist_ok=True)
+    with open(f"{args.save_path}/results/seat/{experiment_id}.json", "w") as f:
         json.dump(results, f)

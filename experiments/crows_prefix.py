@@ -7,7 +7,7 @@ import transformers
 from bias_bench.benchmark.crows import CrowSPairsRunner
 from bias_bench.model import models
 from bias_bench.util import generate_experiment_id, _is_generative
-from PrefixGPT2 import PrefixGPT2
+from experiments.PrefixGPT2 import PrefixGPT2
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 parser = argparse.ArgumentParser(description="Runs CrowS-Pairs benchmark.")
@@ -22,7 +22,7 @@ parser.add_argument(
     "--model",
     action="store",
     type=str,
-    default="BertForMaskedLM",
+    default="GPT2LMHeadModel",
     choices=[
         "BertForMaskedLM",
         "AlbertForMaskedLM",
@@ -36,7 +36,7 @@ parser.add_argument(
     "--model_name_or_path",
     action="store",
     type=str,
-    default="bert-base-uncased",
+    default="gpt2",
     choices=["bert-base-uncased", "albert-base-v2", "roberta-base", "gpt2"],
     help="HuggingFace model name or path (e.g., bert-base-uncased). Checkpoint from which a "
     "model is instantiated.",
@@ -50,7 +50,7 @@ parser.add_argument(
 parser.add_argument(
     "--bias_type",
     action="store",
-    default=None,
+    default='gender',
     choices=["gender", "race", "religion"],
     help="Determines which CrowS-Pairs dataset split to evaluate against.",
 )
@@ -88,6 +88,6 @@ if __name__ == "__main__":
 
     print(f"Metric: {results}")
 
-    os.makedirs(f"{args.persistent_dir}/results/crows", exist_ok=True)
-    with open(f"{args.persistent_dir}/results/crows/{experiment_id}.json", "w") as f:
+    os.makedirs(f"{args.save_path}/results/crows", exist_ok=True)
+    with open(f"{args.save_path}/results/crows/{experiment_id}.json", "w") as f:
         json.dump(results, f)

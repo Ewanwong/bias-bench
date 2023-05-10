@@ -6,7 +6,7 @@ from typing import Optional, Tuple, Union
 from transformers import AutoConfig
 # from transformers import AutoModelWithLMHead, PreTrainedModel
 
-from PrefixEncoder import PrefixEncoder
+from experiments.PrefixEncoder import PrefixEncoder
 
 class PrefixGPT2(GPT2LMHeadModel):
 
@@ -73,9 +73,10 @@ class PrefixGPT2(GPT2LMHeadModel):
         #prefix_attention_mask = torch.ones(batch_size, past_key_values[0].shape[-2]).to(self.gpt2.device) # self.pre_seq_len
         prefix_attention_mask = torch.ones(batch_size, self.pre_seq_len).to(self.gpt2.device)
         if attention_mask is None:
-            attention_mask = prefix_attention_mask
+            attention_mask = torch.cat((prefix_attention_mask, torch.ones(batch_size, input_ids.shape[1]).to(self.gpt2.device)), dim=1)
         elif attention_mask.shape[1] != (self.pre_seq_len + input_ids.shape[1]):
             attention_mask = torch.cat((prefix_attention_mask, attention_mask), dim=1)
+
 
         outputs = self.gpt2(input_ids,
             past_key_values=past_key_values,

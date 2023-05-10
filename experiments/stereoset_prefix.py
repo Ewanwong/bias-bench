@@ -7,6 +7,7 @@ import transformers
 from bias_bench.benchmark.stereoset import StereoSetRunner
 from bias_bench.model import models
 from bias_bench.util import generate_experiment_id, _is_generative
+from PrefixGPT2 import PrefixGPT2
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 parser = argparse.ArgumentParser(description="Runs StereoSet benchmark.")
@@ -41,6 +42,11 @@ parser.add_argument(
     "model is instantiated.",
 )
 parser.add_argument(
+    "--save_path",
+    action="store",
+    type=str
+)
+parser.add_argument(
     "--batch_size",
     action="store",
     type=int,
@@ -73,7 +79,7 @@ if __name__ == "__main__":
     print(f" - batch_size: {args.batch_size}")
     print(f" - seed: {args.seed}")
 
-    model = getattr(models, args.model)(args.model_name_or_path)
+    model = PrefixGPT2.from_pretrained(args.save_path)
     model.eval()
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)
 
@@ -87,8 +93,12 @@ if __name__ == "__main__":
     )
     results = runner()
 
-    os.makedirs(f"{args.persistent_dir}/results/stereoset", exist_ok=True)
+    os.makedirs(f"{args.save_path}/results/stereoset", exist_ok=True)
+    predictions_file = f"{args.save_path}/results/stereoset/{experiment_id}.json"
     with open(
-        f"{args.persistent}/results/stereoset/{experiment_id}.json", "w"
+        predictions_file, "w"
     ) as f:
         json.dump(results, f, indent=2)
+    output_file = f"{args.save_path}/results/stereoset/stereoset_final_results.json"
+    command = f'python experiments/stereoset_evaluation.py --predictions_file {predictions_file} --output_file {output_file}'
+    os.system(command)
