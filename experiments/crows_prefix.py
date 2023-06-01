@@ -55,6 +55,13 @@ parser.add_argument(
     help="Determines which CrowS-Pairs dataset split to evaluate against.",
 )
 
+parser.add_argument(
+    "--split",
+    action="store",
+    type=str,
+    default='test'
+)
+
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -80,7 +87,7 @@ if __name__ == "__main__":
     runner = CrowSPairsRunner(
         model=model,
         tokenizer=tokenizer,
-        input_file=f"{args.persistent_dir}/data/crows/crows_pairs_anonymized.csv",
+        input_file=f"{args.persistent_dir}/data/crows/{args.split}.csv",
         bias_type=args.bias_type,
         is_generative=_is_generative(args.model),  # Affects model scoring.
     )
@@ -89,5 +96,5 @@ if __name__ == "__main__":
     print(f"Metric: {results}")
 
     os.makedirs(f"{args.save_path}/results/crows", exist_ok=True)
-    with open(f"{args.save_path}/results/crows/{experiment_id}.json", "w") as f:
+    with open(f"{args.save_path}/results/crows/{args.split}.json", "w") as f:
         json.dump(results, f)

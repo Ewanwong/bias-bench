@@ -52,7 +52,7 @@ parser.add_argument(
     "--model_name_or_path",
     action="store",
     type=str,
-    default="bert-base-uncased",
+    default="gpt2",
     choices=["bert-base-uncased", "albert-base-v2", "roberta-base", "gpt2"],
     help="HuggingFace model name or path (e.g., bert-base-uncased). Checkpoint from which a "
     "model is instantiated.",
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     runner = CrowSPairsRunner(
         model=model,
         tokenizer=tokenizer,
-        input_file=f"{args.persistent_dir}/data/crows/crows_pairs_anonymized.csv",
+        input_file=f"{args.persistent_dir}/data/crows/test.csv",
         bias_type=args.bias_type,
         is_generative=_is_generative(args.model),  # Affects model scoring.
         is_self_debias=_is_self_debias(args.model),

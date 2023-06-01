@@ -60,6 +60,12 @@ parser.add_argument(
     default=None,
     help="RNG seed. Used for logging in experiment ID.",
 )
+parser.add_argument(
+    "--split",
+    action="store",
+    type=str,
+    default='test'
+)
 
 
 if __name__ == "__main__":
@@ -80,13 +86,14 @@ if __name__ == "__main__":
     print(f" - seed: {args.seed}")
 
     model = PrefixGPT2.from_pretrained(args.save_path)
+    # model = getattr(models, args.model)(args.model_name_or_path)
     model.eval()
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)
 
     runner = StereoSetRunner(
         intrasentence_model=model,
         tokenizer=tokenizer,
-        input_file=f"{args.persistent_dir}/data/stereoset/test.json",
+        input_file=f"{args.persistent_dir}/data/stereoset/{args.split}.json",
         model_name_or_path=args.model_name_or_path,
         batch_size=args.batch_size,
         is_generative=_is_generative(args.model),
@@ -94,11 +101,11 @@ if __name__ == "__main__":
     results = runner()
 
     os.makedirs(f"{args.save_path}/results/stereoset", exist_ok=True)
-    predictions_file = f"{args.save_path}/results/stereoset/{experiment_id}.json"
+    predictions_file = f"{args.save_path}/results/stereoset/{args.split}.json"
     with open(
         predictions_file, "w"
     ) as f:
         json.dump(results, f, indent=2)
-    output_file = f"{args.save_path}/results/stereoset/stereoset_final_results.json"
-    command = f'python experiments/stereoset_evaluation.py --predictions_file {predictions_file} --output_file {output_file}'
+    output_file = f"{args.save_path}/results/stereoset/stereoset_final_{args.split}_results.json"
+    command = f'python experiments/stereoset_evaluation.py --predictions_file {predictions_file} --output_file {output_file} --split {args.split}'
     os.system(command)

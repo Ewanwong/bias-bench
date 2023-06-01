@@ -407,6 +407,7 @@ class GPT2Wrapper(GenerativeLMWrapper):
             # self._model.parallelize()
             pass
         self._model.to("cuda" if torch.cuda.is_available() else "cpu")
+        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self._tokenizer.pad_token = self._tokenizer.eos_token
         self._model.config.pad_token_id = self._tokenizer.eos_token_id
@@ -499,65 +500,50 @@ class GPT2Wrapper(GenerativeLMWrapper):
         )
         return loss
 
-    def compute_loss_self_debiasing(
-        self,
-        input_ids: torch.Tensor,
-        debiasing_prefixes: List[str],
-        decay_constant: float = 50,
-        epsilon: float = 0.01,
-        debug: bool = False,
-    ) -> torch.Tensor:
-        self._device = "cuda"
+    def compute_loss_self_debiasing(self, input_ids: torch.Tensor, trg_len: int, debiasing_prefixes: List[str], decay_constant: float = 50,
+                                    epsilon: float = 0.01, debug: bool = False) -> torch.Tensor:
 
-        self._model.init_logits_processor(
-            num_debiasing_prefixes=len(debiasing_prefixes),
-            decay_constant=decay_constant,
-            epsilon=epsilon,
-            debug=debug,
-            tokenizer=self._tokenizer,
-        )
+        self._model.init_logits_processor(num_debiasing_prefixes=len(debiasing_prefixes), decay_constant=decay_constant, epsilon=epsilon,
+                                          debug=debug, tokenizer=self._tokenizer)
 
-        input_prefixes = [""] + debiasing_prefixes
-        input_prefixes = self._tokenizer.batch_encode_plus(
-            input_prefixes, padding=True, return_tensors="pt"
-        )
-        input_prefixes["attention_mask"] = torch.flip(
-            input_prefixes["attention_mask"], dims=[1]
-        )
+        input_prefixes = [''] + debiasing_prefixes
+        input_prefixes = self._tokenizer.batch_encode_plus(input_prefixes, padding=True, return_tensors='pt')
+        input_prefixes['attention_mask'] = torch.flip(input_prefixes['attention_mask'], dims=[1])
 
-        shifts = input_prefixes["attention_mask"].shape[-1] - input_prefixes[
-            "attention_mask"
-        ].sum(dim=-1)
-        for batch_idx in range(input_prefixes["input_ids"].shape[0]):
-            input_prefixes["input_ids"][batch_idx] = input_prefixes["input_ids"][
-                batch_idx
-            ].roll(shifts[batch_idx].item())
+        shifts = input_prefixes['attention_mask'].shape[-1] - input_prefixes['attention_mask'].sum(dim=-1)
+        for batch_idx in range(input_prefixes['input_ids'].shape[0]):
+            input_prefixes['input_ids'][batch_idx] = input_prefixes['input_ids'][batch_idx].roll(shifts[batch_idx].item())
 
         input_prefixes = {k: v.to(self._device) for k, v in input_prefixes.items()}
 
         input_ids_repeated = input_ids.repeat(len(debiasing_prefixes) + 1, 1)
         attention_mask = torch.ones_like(input_ids_repeated)
 
-        attention_mask = torch.cat(
-            [input_prefixes["attention_mask"], attention_mask], dim=-1
-        )
-        input_ids_repeated = torch.cat(
-            [input_prefixes["input_ids"], input_ids_repeated], dim=-1
-        )
+        attention_mask = torch.cat([input_prefixes['attention_mask'], attention_mask], dim=-1)
+        input_ids_repeated = torch.cat([input_prefixes['input_ids'], input_ids_repeated], dim=-1)
+
+        target_ids = input_ids_repeated.clone()
+        trg_len += shifts[0]
+        target_ids[:, :-trg_len] = -100
 
         position_ids = attention_mask.long().cumsum(-1) - 1
+        
         position_ids.masked_fill_(attention_mask == 0, 1)
-
-        outputs = self._model(
-            input_ids=input_ids_repeated,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-        )
-        lm_logits = outputs["logits"]
+        
+        outputs = self._model(input_ids=input_ids_repeated, attention_mask=attention_mask, position_ids=position_ids, labels=target_ids)
+        lm_logits = outputs[1]
 
         for idx in range(lm_logits.shape[1]):
-            lm_logits[:, idx, :] = self._model.logits_processor(
-                input_ids=None, scores=lm_logits[:, idx, :]
-            )
+            lm_logits[:, idx, :] = self._model.logits_processor(input_ids=None, scores=lm_logits[:, idx, :])
 
-        return lm_logits, input_ids_repeated
+        batch_size = lm_logits.shape[0] // (1 + len(debiasing_prefixes))
+        lm_logits = lm_logits[:batch_size, shifts[0]:, :]
+        target_ids = target_ids[:batch_size, shifts[0]:]
+
+        # Shift so that tokens < n predict n
+        shift_logits = lm_logits[..., :-1, :].contiguous()
+        shift_labels = target_ids[..., 1:].contiguous()
+        # Flatten the tokens
+        loss_fct = CrossEntropyLoss()
+        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+        return loss

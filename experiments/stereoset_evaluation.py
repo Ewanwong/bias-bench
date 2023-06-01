@@ -42,6 +42,12 @@ parser.add_argument(
     default=None,
     help="Path to save the results to.",
 )
+parser.add_argument(
+    "--split",
+    action="store",
+    type=str,
+    default='test'
+)
 
 
 class ScoreEvaluator:
@@ -58,12 +64,14 @@ class ScoreEvaluator:
         # Cluster ID, gold_label to sentence ID.
         stereoset = dataloader.StereoSet(gold_file_path)
         self.intrasentence_examples = stereoset.get_intrasentence_examples()
+        self.intersentence_examples = stereoset.get_intersentence_examples()
         self.id2term = {}
         self.id2gold = {}
         self.id2score = {}
         self.example2sent = {}
         self.domain2example = {
             "intrasentence": defaultdict(lambda: []),
+            "intersentence": defaultdict(lambda: [])
         }
 
         with open(predictions_file_path) as f:
@@ -74,21 +82,29 @@ class ScoreEvaluator:
                 self.id2term[sentence.ID] = example.target
                 self.id2gold[sentence.ID] = sentence.gold_label
                 self.example2sent[(example.ID, sentence.gold_label)] = sentence.ID
-                self.domain2example["intrasentence"][example.bias_type].append(example)
+                self.domain2example['intrasentence'][example.bias_type].append(example)
 
-        for sent in self.predictions.get("intrasentence", []):
-            self.id2score[sent["id"]] = sent["score"]
+        for example in self.intersentence_examples:
+            for sentence in example.sentences:
+                self.id2term[sentence.ID] = example.target
+                self.id2gold[sentence.ID] = sentence.gold_label
+                self.example2sent[(example.ID, sentence.gold_label)] = sentence.ID
+                self.domain2example['intersentence'][example.bias_type].append(example)
+
+        for sent in self.predictions.get('intrasentence', []) + self.predictions.get('intersentence', []):
+            self.id2score[sent['id']] = sent['score']
 
         results = defaultdict(lambda: {})
 
-        for domain in ["gender", "profession", "race", "religion"]:
-            results["intrasentence"][domain] = self.evaluate(
-                self.domain2example["intrasentence"][domain]
-            )
+        for split in ['intrasentence', 'intersentence']:
+            for domain in ['gender', 'profession', 'race', 'religion']:
+                results[split][domain] = self.evaluate(self.domain2example[split][domain])
 
-        results["intrasentence"]["overall"] = self.evaluate(self.intrasentence_examples)
-        results["overall"] = self.evaluate(self.intrasentence_examples)
+        results['intersentence']['overall'] = self.evaluate(self.intersentence_examples) 
+        results['intrasentence']['overall'] = self.evaluate(self.intrasentence_examples) 
+        results['overall'] = self.evaluate(self.intersentence_examples + self.intrasentence_examples)
         self.results = results
+
 
     def get_overall_results(self):
         return self.results
@@ -240,5 +256,5 @@ if __name__ == "__main__":
             )
     else:
         parse_file(
-            f"{args.persistent_dir}/data/stereoset/test.json", args.predictions_file
+            f"{args.persistent_dir}/data/stereoset/{args.split}.json", args.predictions_file
         )

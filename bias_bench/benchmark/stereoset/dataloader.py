@@ -85,6 +85,8 @@ class IntrasentenceLoader(object):
         )
 
 
+
+
 class StereoSet(object):
     def __init__(self, location, json_obj=None):
         """Instantiates the StereoSet object.
@@ -102,6 +104,10 @@ class StereoSet(object):
         self.version = self.json["version"]
         self.intrasentence_examples = self.__create_intrasentence_examples__(
             self.json["data"]["intrasentence"]
+        )
+
+        self.intersentence_examples = self.__create_intersentence_examples__(
+            self.json['data']['intersentence']
         )
 
     def __create_intrasentence_examples__(self, examples):
@@ -135,9 +141,30 @@ class StereoSet(object):
             )
             created_examples.append(created_example)
         return created_examples
+    
+    def __create_intersentence_examples__(self, examples):
+        created_examples = []
+        for example in examples:
+            sentences = []
+            for sentence in example['sentences']:
+                labels = []
+                for label in sentence['labels']:
+                    labels.append(Label(**label))
+                sentence = Sentence(
+                    sentence['id'], sentence['sentence'], labels, sentence['gold_label'])
+                sentences.append(sentence)
+            created_example = IntersentenceExample(
+                example['id'], example['bias_type'], example['target'], 
+                example['context'], sentences) 
+            created_examples.append(created_example)
+        return created_examples
 
     def get_intrasentence_examples(self):
         return self.intrasentence_examples
+
+    def get_intersentence_examples(self):
+        return self.intersentence_examples
+
 
 
 class Example(object):
@@ -217,3 +244,27 @@ class IntrasentenceExample(Example):
         super(IntrasentenceExample, self).__init__(
             ID, bias_type, target, context, sentences
         )
+
+
+
+
+
+
+class IntersentenceExample(Example):
+    def __init__(self, ID, bias_type, target, context, sentences):
+        """
+        Implements the Example class for an intersentence example.
+
+        See Example's docstring for more information.
+        """
+        super(IntersentenceExample, self).__init__(
+            ID, bias_type, target, context, sentences)
+        
+
+if __name__ == '__main__':
+    stereoset = StereoSet('../../../data/stereoset/test.json')
+    clusters = stereoset.get_intersentence_examples()
+    for cluster in clusters:
+
+        print(cluster.context)
+        

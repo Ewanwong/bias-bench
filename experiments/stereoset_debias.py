@@ -52,7 +52,7 @@ parser.add_argument(
     "--model_name_or_path",
     action="store",
     type=str,
-    default="bert-base-uncased",
+    default="gpt2",
     choices=["bert-base-uncased", "albert-base-v2", "roberta-base", "gpt2"],
     help="HuggingFace model name or path (e.g., bert-base-uncased). Checkpoint from which a "
     "model is instantiated.",
@@ -164,3 +164,7 @@ if __name__ == "__main__":
         f"{args.persistent_dir}/results/stereoset/{experiment_id}.json", "w"
     ) as f:
         json.dump(results, f, indent=2)
+
+    output_file = f"{args.persistent_dir}/results/stereoset/stereoset_final_{args.model}_results.json"
+    command = f'python experiments/stereoset_evaluation.py --predictions_file {args.persistent_dir}/results/stereoset/{experiment_id}.json --output_file {output_file} --split test'
+    os.system(command)

@@ -193,6 +193,31 @@ class SelfDebiasingGPT2LMHeadModel(GPT2LMHeadModel, GenerationMixin):
         raise NotImplementedError(
             "Beam sampling is not implemented for class SelfDebiasingGPT2LMHeadModel"
         )
+    
+    def _init_sequence_length_for_generation(self,
+        input_ids: torch.LongTensor, max_length: int
+    ) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
+        sequence_lengths = input_ids.new(input_ids.shape[0]).fill_(max_length)
+
+        cur_len = input_ids.shape[-1]
+        return sequence_lengths, unfinished_sequences, cur_len
+    
+    def _update_seq_length_for_generation(self,
+        sequence_lengths: torch.LongTensor,
+        unfinished_sequences: torch.LongTensor,
+        cur_len: int,
+        is_eos_in_next_token: torch.BoolTensor,
+    ) -> Tuple[torch.LongTensor, torch.LongTensor]:
+        # check if sentence is not finished yet
+        is_sent_unfinished = unfinished_sequences.mul(is_eos_in_next_token.long()).bool()
+
+        # update sentence length
+        sequence_lengths = sequence_lengths.masked_fill(is_sent_unfinished, cur_len)
+        unfinished_sequences = unfinished_sequences.mul((~is_eos_in_next_token).long())
+        return sequence_lengths, unfinished_sequences
+
+
 
     def sample(
         self,
@@ -267,6 +292,7 @@ class SelfDebiasingGPT2LMHeadModel(GPT2LMHeadModel, GenerationMixin):
                 if output_hidden_states
                 else None
             )
+
 
         # init sequence length tensors
         (

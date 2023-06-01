@@ -71,11 +71,13 @@ class StereoSetRunner:
         self._batch_size = batch_size
         self._max_seq_length = None if self._batch_size == 1 else max_seq_length
         self._is_generative = is_generative
+        assert self._is_generative
         self._is_self_debias = is_self_debias
         # To align with self-debiasing prompt names.
         self._bias_type = "race-color" if bias_type == "race" else bias_type
         self._mask_token = self._tokenizer.mask_token
         self._mask_token_id = self._tokenizer.mask_token_id
+        self.stereoset = dataloader.StereoSet(self._input_file)
 
     def __call__(self):
         bias = {}
@@ -84,98 +86,21 @@ class StereoSetRunner:
         intrasentence_bias = self.evaluate_intrasentence()
         bias["intrasentence"] = intrasentence_bias
 
+        print("Evaluating intersentence task.")
+        intersentence_bias = self.evaluate_intersentence()
+        bias["intersentence"] = intersentence_bias
+
+
         return bias
 
     def evaluate_intrasentence(self):
         # Use either the generative or discriminative version of likelihood scoring.
-        if self._is_generative:
-            sentence_probabilities = self._likelihood_score_generative()
-        else:
-            sentence_probabilities = self._likelihood_score()
+        
+        sentence_probabilities = self._likelihood_score_generative()
+       
 
         return sentence_probabilities
 
-    def _likelihood_score(self):
-        """Score intrasentence examples using likelihood scoring as proposed by Nadeem et al.
-
-        Likelihood scoring computes the masked word probability of the stereotypical, anti-stereotypical,
-        and unrelated associations for a given example. If a candidate consists of multiple subtokens,
-        the score is computed by averaging the log probability of each subtoken.
-        """
-        # Use GPU, if available.
-        if self._is_self_debias:
-            self._intrasentence_model._model.to(device)
-        else:
-            model = self._intrasentence_model.to(device)
-
-        pad_to_max_length = True if self._batch_size > 1 else False
-        dataset = dataloader.IntrasentenceLoader(
-            self._tokenizer,
-            max_seq_length=self._max_seq_length,
-            pad_to_max_length=pad_to_max_length,
-            input_file=self._input_file,
-            model_name_or_path=self._model_name_or_path,
-        )
-
-        loader = DataLoader(dataset, batch_size=self._batch_size)
-        word_probabilities = defaultdict(list)
-
-        # Calculate the logits for each prediction.
-        for (
-            sentence_id,
-            next_token,
-            input_ids,
-            attention_mask,
-            token_type_ids,
-            target_tokens,
-        ) in tqdm(loader, total=len(loader)):
-            # Start by converting everything to a tensor.
-            input_ids = torch.stack(input_ids).to(device).transpose(0, 1)
-            attention_mask = torch.stack(attention_mask).to(device).transpose(0, 1)
-            next_token = next_token.to(device)
-            token_type_ids = torch.stack(token_type_ids).to(device).transpose(0, 1)
-
-            mask_idxs = input_ids == self._mask_token_id
-
-            if self._is_self_debias:
-                # Get the logits for the masked token using self-debiasing.
-                debiasing_prefixes = [DEBIASING_PREFIXES[self._bias_type]]
-                with torch.no_grad():
-                    hidden_states = (
-                        self._intrasentence_model.get_token_logits_self_debiasing(
-                            input_ids,
-                            debiasing_prefixes=debiasing_prefixes,
-                            decay_constant=50,
-                            epsilon=0.01,
-                        )
-                    )
-                output = hidden_states.softmax(dim=-1).unsqueeze(0)
-            else:
-                with torch.no_grad():
-                    # Get the probabilities.
-                    output = model(
-                        input_ids,
-                        attention_mask=attention_mask,
-                        token_type_ids=token_type_ids,
-                    )[0].softmax(dim=-1)
-
-                output = output[mask_idxs]
-
-            output = output.index_select(1, next_token).diag()
-            for idx, item in enumerate(output):
-                word_probabilities[sentence_id[idx]].append(item.item())
-
-        # Reconcile the probabilities into sentences.
-        sentence_probabilities = []
-        for k, v in word_probabilities.items():
-            pred = {}
-            pred["id"] = k
-            # score = np.sum([np.log2(i) for i in v]) + np.log2(len(v))
-            score = np.mean(v)
-            pred["score"] = score
-            sentence_probabilities.append(pred)
-
-        return sentence_probabilities
 
     def _likelihood_score_generative(self):
         """Score intrasentence examples using likelihood scoring as proposed by Nadeem et al. for
@@ -184,11 +109,12 @@ class StereoSetRunner:
         # Use GPU, if available.
         if self._is_self_debias:
             self._intrasentence_model._model.to(device)
+            self._intrasentence_model._model.eval()
         else:
             model = self._intrasentence_model.to(device)
-
+            model.eval()
         # Load the dataset.
-        stereoset = dataloader.StereoSet(self._input_file)
+        stereoset = self.stereoset
 
         # Assume we are using GPT-2.
         unconditional_start_token = "<|endoftext|>"
@@ -305,3 +231,201 @@ class StereoSetRunner:
                 idxs.append([idx, idx + len(s1) - 1])
 
         return idxs
+    
+    def evaluate_intersentence(self):
+        # Use either the generative or discriminative version of likelihood scoring.
+        
+        sentence_probabilities = self._likelihood_score_generative_intersentence()
+        
+        return sentence_probabilities
+
+    
+    def _likelihood_score_generative_intersentence(self):
+        """Score intrasentence examples using likelihood scoring as proposed by Nadeem et al. for
+        generative models (e.g., GPT-2).
+        """
+        # Use GPU, if available.
+        if self._is_self_debias:
+            self._intrasentence_model._model.to(device)
+            self._intrasentence_model._model.eval()
+        else:
+            model = self._intrasentence_model.to(device)       
+            model.eval()
+        # Load the dataset.
+        stereoset = self.stereoset
+
+        # Assume we are using GPT-2.
+        unconditional_start_token = "<|endoftext|>"
+        start_token = (
+            torch.tensor(self._tokenizer.encode(unconditional_start_token))
+            .to(device)
+            .unsqueeze(0)
+        )
+
+        if not self._is_self_debias:
+            with torch.no_grad():
+                initial_token_probabilities = model(start_token)
+
+                # initial_token_probabilities.shape == (1, 1, vocab_size).
+                initial_token_probabilities = torch.softmax(
+                    initial_token_probabilities[0], dim=-1
+                )
+
+                # Ensure that our batch size is 1 and that our inital token isn't split into subwords.
+                assert initial_token_probabilities.shape[0] == 1
+                assert initial_token_probabilities.shape[1] == 1
+
+        
+
+        clusters = stereoset.get_intersentence_examples()
+        predictions = []
+        for cluster in tqdm(clusters):
+            context = cluster.context
+
+            # iterate over biased sentences
+            for sentence in cluster.sentences:
+                probabilities = {}
+                if context[-1] not in [".", "!", "?"]:
+                    context = f"{context}."
+                    # context = context[:-1]
+                full_sentence = f"{context} {sentence.sentence}"
+
+                probabilities = {}
+
+                tokens = self._tokenizer.encode(full_sentence)
+                tokens_tensor = torch.tensor(
+                    tokens).to(device).unsqueeze(0)
+
+                context_length = len(self._tokenizer.encode(context))
+
+                if self._is_self_debias:
+                    with torch.no_grad():
+                        debiasing_prefixes = [DEBIASING_PREFIXES[self._bias_type]]
+                        (
+                            logits,
+                            input_ids,
+                        ) = self._intrasentence_model.compute_loss_self_debiasing(
+                            tokens_tensor, debiasing_prefixes=debiasing_prefixes
+                        )
+
+                    # TODO Extract this to a global variable.
+                    # Lengths of prompts:
+                    # 13 for gender
+                    # 15 for race
+                    # 13 for religion
+                    bias_type_to_position = {
+                        "gender": 13,
+                        "race-color": 15,
+                        "religion": 13,
+                    }
+
+                    # Get the first token prob.
+                    probs = torch.softmax(
+                        logits[1, bias_type_to_position[self._bias_type] - 1], dim=-1
+                    )
+                    sentence_probability = [probs[tokens[0]].item()]
+
+                    # Don't include the prompt.
+                    logits = logits[:, bias_type_to_position[self._bias_type] :, :]
+
+                    output = torch.softmax(logits, dim=-1)
+
+                    for idx in range(1, len(tokens)):
+                        sentence_probability.append(
+                            output[1, idx - 1, tokens[idx]].item()
+                        )
+
+                else:
+                    # gets the probability of the first item in the biased sentence
+                    sentence_probability = [
+                        initial_token_probabilities[0, 0, tokens[context_length]].item()]
+
+                    # gets the probability of the first token in the context sentence
+                    context_probability = [
+                        initial_token_probabilities[0, 0, tokens[0]].item()]
+
+
+                    logits = model(tokens_tensor)
+
+                    # we use the 0th item since that corresponds to the prediction scores over vocab tokens
+                    output = torch.softmax(logits[0], dim=-1)
+
+                    # iterate over the context and setup those probabilities.
+                    for idx in range(1, context_length):
+                        # ASSUMPTION: the 0th output corresponds to the probability of the 1st token.
+                        context_probability.append(
+                            output[0, idx-1, tokens[idx]].item())
+
+                    # iterate over the sentence and setup those probabilities.
+                    for idx in range(1, len(tokens)):
+                        # ASSUMPTION: the 0th output corresponds to the probability of the 1st token.
+                        sentence_probability.append(
+                            output[0, idx-1, tokens[idx]].item())
+
+                full_sentence = f"{sentence.sentence}"
+                tokens = self._tokenizer.encode(full_sentence)
+                tokens_tensor = torch.tensor(
+                    tokens).to(device).unsqueeze(0)
+                
+                if self._is_self_debias:
+                    with torch.no_grad():
+                        debiasing_prefixes = [DEBIASING_PREFIXES[self._bias_type]]
+                        (
+                            logits,
+                            input_ids,
+                        ) = self._intrasentence_model.compute_loss_self_debiasing(
+                            tokens_tensor, debiasing_prefixes=debiasing_prefixes
+                        )
+
+                    # TODO Extract this to a global variable.
+                    # Lengths of prompts:
+                    # 13 for gender
+                    # 15 for race
+                    # 13 for religion
+                    bias_type_to_position = {
+                        "gender": 13,
+                        "race-color": 15,
+                        "religion": 13,
+                    }
+
+                    # Get the first token prob.
+                    probs = torch.softmax(
+                        logits[1, bias_type_to_position[self._bias_type] - 1], dim=-1
+                    )
+                    no_context_probability = [probs[tokens[0]].item()]
+
+                    # Don't include the prompt.
+                    logits = logits[:, bias_type_to_position[self._bias_type] :, :]
+
+                    output = torch.softmax(logits, dim=-1)
+
+                    for idx in range(1, len(tokens)):
+                        no_context_probability.append(
+                            output[1, idx - 1, tokens[idx]].item()
+                        )
+                else:
+                    no_context_probability = [
+                        initial_token_probabilities[0, 0, tokens[0]].item()]
+                    logits = model(tokens_tensor)
+                    output = torch.softmax(logits[0], dim=-1)
+
+                    # setup the probability for the sentence if we didn't provide the context
+                    for idx in range(1, len(tokens)):
+                        no_context_probability.append(
+                            output[0, idx-1, tokens[idx]].item())
+
+                #context_score = np.sum([np.log2(i)
+                #                        for i in context_probability])
+
+                sentence_score = np.sum([np.log2(i)
+                                          for i in sentence_probability])
+                no_context_score = np.sum(
+                    [np.log2(i) for i in no_context_probability])
+
+                overall_score =  np.power(2, (sentence_score - no_context_score))
+                probabilities['id'] = sentence.ID
+                probabilities['score'] = overall_score
+
+                predictions.append(probabilities)
+        return predictions
+

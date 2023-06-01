@@ -89,6 +89,10 @@ if __name__ == "__main__":
 
     os.makedirs(f"{args.persistent_dir}/results/stereoset", exist_ok=True)
     with open(
-        f"{args.persistent}/results/stereoset/{experiment_id}.json", "w"
+        f"{args.persistent_dir}/results/stereoset/{experiment_id}.json", "w"
     ) as f:
         json.dump(results, f, indent=2)
+    
+    output_file = f"{args.persistent_dir}/results/stereoset/stereoset_final_{args.model}_results.json"
+    command = f'python experiments/stereoset_evaluation.py --predictions_file {args.persistent_dir}/results/stereoset/{experiment_id}.json --output_file {output_file} --split test'
+    os.system(command)
