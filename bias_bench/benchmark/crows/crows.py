@@ -363,7 +363,7 @@ class CrowSPairsRunner:
 
         # Ensure that we have a probability on every token.
         assert len(tokens) == len(joint_sentence_probability)
-
+        # print(joint_sentence_probability)
         score = np.sum([np.log2(i) for i in joint_sentence_probability])
         score /= len(joint_sentence_probability)
         score = np.power(2, score)

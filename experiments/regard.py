@@ -27,6 +27,8 @@ from transformers import (
 	RobertaForSequenceClassification,
 	RobertaTokenizer,
 	get_linear_schedule_with_warmup,
+    GPT2LMHeadModel,
+    AutoModelWithLMHead
 )
 from regard_util import convert_examples_to_features, get_labels, read_examples_from_file
 from transformers import BERT_PRETRAINED_CONFIG_ARCHIVE_MAP, ROBERTA_PRETRAINED_CONFIG_ARCHIVE_MAP
@@ -186,6 +188,7 @@ parser.add_argument(
         "AlbertForMaskedLM",
         "RobertaForMaskedLM",
         "GPT2LMHeadModel",
+        "ContextDebiasGPT2LMHeadModel"
     ],
     help="Model to evalute (e.g., BertForMaskedLM). Typically, these correspond to a HuggingFace "
     "class.",
@@ -208,8 +211,12 @@ parser.add_argument(
 
 parser.add_argument(
 	"--n_samples",
-	default=5,
+	default=20,
 	type=int
+)
+parser.add_argument(
+    "--save_path",
+    type=str,
 )
 
 if __name__ == "__main__":
@@ -227,7 +234,10 @@ if __name__ == "__main__":
     print(f" - model_name_or_path: {args.model_name_or_path}")
 
     # Load model and tokenizer.
-    model = getattr(models, args.model)(args.model_name_or_path)
+    if args.model == "ContextDebiasGPT2LMHeadModel":
+        model = GPT2LMHeadModel.from_pretrained(args.save_path)
+    else:
+        model = AutoModelWithLMHead.from_pretrained(args.model_name_or_path)
     # model = getattr(models, args.model)(args.model_name_or_path)
     model.eval()
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)

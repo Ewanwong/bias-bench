@@ -3,7 +3,7 @@ import json
 import os
 
 import transformers
-from transformers import GPT2LMHeadModel, AutoModelWithLMHead
+
 from bias_bench.benchmark.stereoset import StereoSetRunner
 from bias_bench.model import models
 from bias_bench.util import generate_experiment_id, _is_generative
@@ -27,7 +27,6 @@ parser.add_argument(
         "AlbertForMaskedLM",
         "RobertaForMaskedLM",
         "GPT2LMHeadModel",
-        "ContextDebiasGPT2LMHeadModel"
     ],
     help="Model to evalute (e.g., BertForMaskedLM). Typically, these correspond to a HuggingFace "
     "class.",
@@ -55,10 +54,6 @@ parser.add_argument(
     default=None,
     help="RNG seed. Used for logging in experiment ID.",
 )
-parser.add_argument(
-    "--save_path",
-    type=str,
-)
 
 
 if __name__ == "__main__":
@@ -66,7 +61,7 @@ if __name__ == "__main__":
 
     experiment_id = generate_experiment_id(
         name="stereoset",
-        model=args.model,
+        model="ControllableBiaseGPT2LMHeadModel",
         model_name_or_path=args.model_name_or_path,
         seed=args.seed,
     )
@@ -78,17 +73,14 @@ if __name__ == "__main__":
     print(f" - batch_size: {args.batch_size}")
     print(f" - seed: {args.seed}")
 
-    if args.model == "ContextDebiasGPT2LMHeadModel":
-        model = GPT2LMHeadModel.from_pretrained(args.save_path)
-    else:
-        model = AutoModelWithLMHead.from_pretrained(args.model_name_or_path)
+    model = getattr(models, args.model)(args.model_name_or_path)
     model.eval()
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)
 
     runner = StereoSetRunner(
         intrasentence_model=model,
         tokenizer=tokenizer,
-        input_file=f"{args.persistent_dir}/data/stereoset/test.json",
+        input_file=f"{args.persistent_dir}/data/stereoset/test_w_trigger.json",
         model_name_or_path=args.model_name_or_path,
         batch_size=args.batch_size,
         is_generative=_is_generative(args.model),
@@ -101,6 +93,6 @@ if __name__ == "__main__":
     ) as f:
         json.dump(results, f, indent=2)
     
-    output_file = f"{args.persistent_dir}/results/stereoset/stereoset_final_{args.model}_results.json"
+    output_file = f"{args.persistent_dir}/results/stereoset/stereoset_final_ControllableBiaseGPT2LMHeadModel_results.json"
     command = f'python experiments/stereoset_evaluation.py --predictions_file {args.persistent_dir}/results/stereoset/{experiment_id}.json --output_file {output_file} --split test'
     os.system(command)

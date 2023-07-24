@@ -3,7 +3,7 @@ import os
 import json
 
 import transformers
-from transformers import AutoModelWithLMHead, GPT2LMHeadModel
+
 from bias_bench.benchmark.crows import CrowSPairsRunner
 from bias_bench.model import models
 from bias_bench.util import generate_experiment_id, _is_generative
@@ -27,7 +27,6 @@ parser.add_argument(
         "AlbertForMaskedLM",
         "RobertaForMaskedLM",
         "GPT2LMHeadModel",
-        "ContextDebiasGPT2LMHeadModel"
     ],
     help="Model to evalute (e.g., BertForMaskedLM). Typically, these correspond to a HuggingFace "
     "class.",
@@ -49,17 +48,13 @@ parser.add_argument(
     help="Determines which CrowS-Pairs dataset split to evaluate against.",
 )
 
-parser.add_argument(
-    "--save_path",
-    type=str,
-)
 
 if __name__ == "__main__":
     args = parser.parse_args()
 
     experiment_id = generate_experiment_id(
         name="crows",
-        model=args.model,
+        model='ControllableBiaseGPT2LMHeadModel',
         model_name_or_path=args.model_name_or_path,
         bias_type=args.bias_type,
     )
@@ -71,17 +66,14 @@ if __name__ == "__main__":
     print(f" - bias_type: {args.bias_type}")
 
     # Load model and tokenizer.
-    if args.model == "ContextDebiasGPT2LMHeadModel":
-        model = GPT2LMHeadModel.from_pretrained(args.save_path)
-    else:
-        model = AutoModelWithLMHead.from_pretrained(args.model_name_or_path)
+    model = getattr(models, args.model)(args.model_name_or_path)
     model.eval()
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)
 
     runner = CrowSPairsRunner(
         model=model,
         tokenizer=tokenizer,
-        input_file=f"{args.persistent_dir}/data/crows/test.csv",
+        input_file=f"{args.persistent_dir}/data/crows/test_w_trigger.csv",
         bias_type=args.bias_type,
         is_generative=_is_generative(args.model),  # Affects model scoring.
     )

@@ -5,7 +5,7 @@ from tqdm import tqdm
 import os
 
 import transformers
-from transformers import GPT2TokenizerFast
+from transformers import GPT2TokenizerFast, GPT2LMHeadModel, AutoModelWithLMHead
 from datasets import load_dataset
 
 from bias_bench.model import models
@@ -96,11 +96,15 @@ if __name__ == "__main__":
             "AlbertForMaskedLM",
             "RobertaForMaskedLM",
             "GPT2LMHeadModel",
+            "ContextDebiasGPT2LMHeadModel"
         ],
         help="Model to evalute (e.g., BertForMaskedLM). Typically, these correspond to a HuggingFace "
         "class.",
     )
-    
+    parser.add_argument(
+    "--save_path",
+    type=str,
+    )
     parser.add_argument("--bias_type", action="store", type=str, default="gender")
 
     parser.add_argument(
@@ -126,7 +130,10 @@ if __name__ == "__main__":
 
     print("=" * 40)
     print(f"Loading: {args.model}")
-    model = getattr(models, args.model)(args.model_name_or_path, **kwargs)
+    if args.model == "ContextDebiasGPT2LMHeadModel":
+        model = GPT2LMHeadModel.from_pretrained(args.save_path)
+    else:
+        model = AutoModelWithLMHead.from_pretrained(args.model_name_or_path)
     print("=" * 40)
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)

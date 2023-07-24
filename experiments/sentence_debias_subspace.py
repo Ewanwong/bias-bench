@@ -28,7 +28,7 @@ parser.add_argument(
     "--model",
     action="store",
     type=str,
-    default="BertModel",
+    default="GPT2Model",
     choices=["BertModel", "AlbertModel", "RobertaModel", "GPT2Model"],
     help="Model (e.g., BertModel) to compute the SentenceDebias subspace for. "
     "Typically, these correspond to a HuggingFace class.",

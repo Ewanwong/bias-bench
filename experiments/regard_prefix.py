@@ -214,7 +214,7 @@ parser.add_argument(
 
 parser.add_argument(
 	"--n_samples",
-	default=5,
+	default=20,
 	type=int
 )
 
